@@ -13,6 +13,14 @@ function getStatus($reqs, $key) {
     return $reqs[$key] ?? 'not_submitted';
 }
 
+function renderReason($status, $reason) {
+    if ($status === 'rejected' && !empty($reason)) {
+        return "<span style='color: #dc3545; font-size: 0.85rem; font-weight: bold;'>⚠️ " . htmlspecialchars($reason) . "</span>";
+    }
+    return "<span style='color: #999;'>-</span>";
+}
+
+
 // Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reqs'])) {
     $upload_dir = 'uploads/';
@@ -52,16 +60,16 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reqs'])) {
         $updateFields = [];
         $params = [];
         
-        if ($tbo_pay) { $updateFields[] = "tbo_pay_scrn=?, tbo_pay_status='pending'"; $params[] = $tbo_pay; }
-        if ($tbo_ret) { $updateFields[] = "tbo_return_scrn=?, tbo_return_status='pending'"; $params[] = $tbo_ret; }
-        if ($otc_pay) { $updateFields[] = "otc_pay_scrn=?, otc_pay_status='pending'"; $params[] = $otc_pay; }
-        if ($otc_ret) { $updateFields[] = "otc_return_scrn=?, otc_return_status='pending'"; $params[] = $otc_ret; }
-        if ($otc_admin1) { $updateFields[] = "otc_admin1_scrn=?, otc_admin1_status='pending'"; $params[] = $otc_admin1; }
-        if ($otc_admin2) { $updateFields[] = "otc_admin2_scrn=?, otc_admin2_status='pending'"; $params[] = $otc_admin2; }
-        
-        if ($pb_url) { $updateFields[] = "postback_url=?, postback_status='pending'"; $params[] = $pb_url; }
-        if ($ret_url) { $updateFields[] = "return_url=?, return_url_status='pending'"; $params[] = $ret_url; }
-        if ($web_url) { $updateFields[] = "website_url=?, website_status='pending'"; $params[] = $web_url; }
+        if ($tbo_pay) { $updateFields[] = "tbo_pay_scrn=?, tbo_pay_status='pending', tbo_pay_reason=NULL"; $params[] = $tbo_pay; }
+        if ($tbo_ret) { $updateFields[] = "tbo_return_scrn=?, tbo_return_status='pending', tbo_return_reason=NULL"; $params[] = $tbo_ret; }
+        if ($otc_pay) { $updateFields[] = "otc_pay_scrn=?, otc_pay_status='pending', otc_pay_reason=NULL"; $params[] = $otc_pay; }
+        if ($otc_ret) { $updateFields[] = "otc_return_scrn=?, otc_return_status='pending', otc_return_reason=NULL"; $params[] = $otc_ret; }
+        if ($otc_admin1) { $updateFields[] = "otc_admin1_scrn=?, otc_admin1_status='pending', otc_admin1_reason=NULL"; $params[] = $otc_admin1; }
+        if ($otc_admin2) { $updateFields[] = "otc_admin2_scrn=?, otc_admin2_status='pending', otc_admin2_reason=NULL"; $params[] = $otc_admin2; }
+
+        if ($pb_url) { $updateFields[] = "postback_url=?, postback_status='pending', postback_reason=NULL"; $params[] = $pb_url; }
+        if ($ret_url) { $updateFields[] = "return_url=?, return_url_status='pending', return_url_reason=NULL"; $params[] = $ret_url; }
+        if ($web_url) { $updateFields[] = "website_url=?, website_status='pending', website_reason=NULL"; $params[] = $web_url; }
 
         if (!empty($updateFields)) {
             $updateQuery = "UPDATE requirements SET " . implode(', ', $updateFields) . " WHERE merchant_id = ?";
@@ -185,18 +193,66 @@ function renderBadge($status) {
     <div class="card">
         <div class="card-header">Submission Status</div>
         <table>
-            <tr><th>Requirement</th><th>Status</th></tr>
-            <tr><td>TBO: Pay.aspx</td><td><?= renderBadge($statuses['tbo_pay']) ?></td></tr>
-            <tr><td>TBO: Return URL</td><td><?= renderBadge($statuses['tbo_ret']) ?></td></tr>
-            <tr><td>OTC: Pay.aspx</td><td><?= renderBadge($statuses['otc_pay']) ?></td></tr>
-            <tr><td>OTC: Return URL</td><td><?= renderBadge($statuses['otc_ret']) ?></td></tr>
-            <tr><td>OTC: Admin Pending</td><td><?= renderBadge($statuses['otc_admin1']) ?></td></tr>
-            <tr><td>OTC: Admin Validated</td><td><?= renderBadge($statuses['otc_admin2']) ?></td></tr>
-            <tr><td>Postback URL</td><td><?= renderBadge($statuses['postback']) ?></td></tr>
-            <tr><td>Return URL</td><td><?= renderBadge($statuses['return']) ?></td></tr>
-            <tr><td>Website URL</td><td><?= renderBadge($statuses['website']) ?></td></tr>
-            <tr><td>RSA-SHA256 Check</td><td><?= renderBadge($statuses['rsa']) ?></td></tr>
-            <tr><td>Idempotency Check</td><td><?= renderBadge($statuses['idem']) ?></td></tr>
+            <tr>
+                <th width="40%">Requirement</th>
+                <th width="25%">Status</th>
+                <th width="35%">Remarks</th>
+            </tr>
+            <tr>
+                <td>Test Bank Online: Pay.aspx</td>
+                <td><?= renderBadge($statuses['tbo_pay']) ?></td>
+                <td><?= renderReason($statuses['tbo_pay'], $reqs['tbo_pay_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Test Bank Online: Return URL</td>
+                <td><?= renderBadge($statuses['tbo_ret']) ?></td>
+                <td><?= renderReason($statuses['tbo_ret'], $reqs['tbo_return_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Test Bank Over the Counter: Pay.aspx</td>
+                <td><?= renderBadge($statuses['otc_pay']) ?></td>
+                <td><?= renderReason($statuses['otc_pay'], $reqs['otc_pay_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Test Bank Over the Counter: Return URL</td>
+                <td><?= renderBadge($statuses['otc_ret']) ?></td>
+                <td><?= renderReason($statuses['otc_ret'], $reqs['otc_return_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Test Bank Over the Counter: Admin Pending</td>
+                <td><?= renderBadge($statuses['otc_admin1']) ?></td>
+                <td><?= renderReason($statuses['otc_admin1'], $reqs['otc_admin1_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Test Bank Over the Counter: Admin Validated</td>
+                <td><?= renderBadge($statuses['otc_admin2']) ?></td>
+                <td><?= renderReason($statuses['otc_admin2'], $reqs['otc_admin2_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Postback URL</td>
+                <td><?= renderBadge($statuses['postback']) ?></td>
+                <td><?= renderReason($statuses['postback'], $reqs['postback_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Return URL</td>
+                <td><?= renderBadge($statuses['return']) ?></td>
+                <td><?= renderReason($statuses['return'], $reqs['return_url_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Website URL</td>
+                <td><?= renderBadge($statuses['website']) ?></td>
+                <td><?= renderReason($statuses['website'], $reqs['website_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>RSA-SHA256 Check</td>
+                <td><?= renderBadge($statuses['rsa']) ?></td>
+                <td><?= renderReason($statuses['rsa'], $reqs['rsa_reason'] ?? '') ?></td>
+            </tr>
+            <tr>
+                <td>Idempotency Check</td>
+                <td><?= renderBadge($statuses['idem']) ?></td>
+                <td><?= renderReason($statuses['idem'], $reqs['idempotency_reason'] ?? '') ?></td>
+            </tr>
         </table>
         <p><small><em>* Note: RSA and Idempotency are tested internally by our DevOps team.</em></small></p>
     </div>
@@ -214,7 +270,7 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['tbo_pay'])): ?>
                 <div class="form-group">
-                    <label>1. TBO: Pay.aspx</label>
+                    <label>1. Test Bank Online: Pay.aspx</label>
                     <small>Screenshot the Dragonpay Pay.aspx payment method selection page (include the address bar).</small>
                     <input type="file" name="tbo_pay_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -222,7 +278,7 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['tbo_ret'])): ?>
                 <div class="form-group">
-                    <label>2. TBO: Return URL</label>
+                    <label>2. Test Bank Online: Return URL</label>
                     <small>Select 'Test Bank Online', proceed with the payment, and screenshot the Return URL page.</small>
                     <input type="file" name="tbo_return_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -234,7 +290,7 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['otc_pay'])): ?>
                 <div class="form-group">
-                    <label>1. OTC: Pay.aspx</label>
+                    <label>1. Test Bank Over the Counter: Pay.aspx</label>
                     <small>Screenshot the Dragonpay Pay.aspx payment method selection page (include the address bar).</small>
                     <input type="file" name="otc_pay_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -242,7 +298,7 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['otc_ret'])): ?>
                 <div class="form-group">
-                    <label>2. OTC: Return URL</label>
+                    <label>2. Test Bank Over the Counter: Return URL</label>
                     <small>Click on 'Send instructions via email', then screenshot the Return URL page.</small>
                     <input type="file" name="otc_return_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -250,7 +306,7 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['otc_admin1'])): ?>
                 <div class="form-group">
-                    <label>3. OTC: Admin Orders (Pending)</label>
+                    <label>3. Test Bank Over the Counter: Admin Orders (Pending)</label>
                     <small>Go to your Admin > Orders page or your database. Capture a screenshot showing the transaction ID and status.</small>
                     <input type="file" name="otc_admin1_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -258,7 +314,7 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['otc_admin2'])): ?>
                 <div class="form-group">
-                    <label>4. OTC: Admin Orders (Validated)</label>
+                    <label>4. Test Bank Over the Counter: Admin Orders (Validated)</label>
                     <small>Follow the emailed instructions, complete 'Step 2. Validation'. Screenshot the Admin > Orders page again, showing the updated status.</small>
                     <input type="file" name="otc_admin2_scrn" accept="image/png, image/jpeg">
                 </div>

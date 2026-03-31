@@ -10,17 +10,17 @@ $last_edited_id = null;
 
 // Define all requirement fields dynamically
 $req_fields = [
-    ['key' => 'tbo_pay', 'label' => 'TBO: Pay.aspx', 'val_col' => 'tbo_pay_scrn', 'stat_col' => 'tbo_pay_status', 'type' => 'file'],
-    ['key' => 'tbo_ret', 'label' => 'TBO: Return URL', 'val_col' => 'tbo_return_scrn', 'stat_col' => 'tbo_return_status', 'type' => 'file'],
-    ['key' => 'otc_pay', 'label' => 'OTC: Pay.aspx', 'val_col' => 'otc_pay_scrn', 'stat_col' => 'otc_pay_status', 'type' => 'file'],
-    ['key' => 'otc_ret', 'label' => 'OTC: Return URL', 'val_col' => 'otc_return_scrn', 'stat_col' => 'otc_return_status', 'type' => 'file'],
-    ['key' => 'otc_admin1', 'label' => 'OTC: Admin Pending', 'val_col' => 'otc_admin1_scrn', 'stat_col' => 'otc_admin1_status', 'type' => 'file'],
-    ['key' => 'otc_admin2', 'label' => 'OTC: Admin Validated', 'val_col' => 'otc_admin2_scrn', 'stat_col' => 'otc_admin2_status', 'type' => 'file'],
-    ['key' => 'postback', 'label' => 'Postback URL', 'val_col' => 'postback_url', 'stat_col' => 'postback_status', 'type' => 'text'],
-    ['key' => 'return', 'label' => 'Return URL', 'val_col' => 'return_url', 'stat_col' => 'return_url_status', 'type' => 'text'],
-    ['key' => 'website', 'label' => 'Website URL', 'val_col' => 'website_url', 'stat_col' => 'website_status', 'type' => 'text'],
-    ['key' => 'rsa', 'label' => 'RSA-SHA256 Check', 'val_col' => null, 'stat_col' => 'rsa_status', 'type' => 'devops'],
-    ['key' => 'idem', 'label' => 'Idempotency Check', 'val_col' => null, 'stat_col' => 'idempotency_status', 'type' => 'devops'],
+    ['key' => 'tbo_pay', 'label' => 'Test Bank Online: Pay.aspx', 'val_col' => 'tbo_pay_scrn', 'stat_col' => 'tbo_pay_status', 'reason_col' => 'tbo_pay_reason', 'type' => 'file'],
+    ['key' => 'tbo_ret', 'label' => 'Test Bank Online: Return URL', 'val_col' => 'tbo_return_scrn', 'stat_col' => 'tbo_return_status', 'reason_col' => 'tbo_return_reason', 'type' => 'file'],
+    ['key' => 'otc_pay', 'label' => 'Test Bank Over the Counter: Pay.aspx', 'val_col' => 'otc_pay_scrn', 'stat_col' => 'otc_pay_status', 'reason_col' => 'otc_pay_reason', 'type' => 'file'],
+    ['key' => 'otc_ret', 'label' => 'Test Bank Over the Counter: Return URL', 'val_col' => 'otc_return_scrn', 'stat_col' => 'otc_return_status', 'reason_col' => 'otc_return_reason', 'type' => 'file'],
+    ['key' => 'otc_admin1', 'label' => 'Test Bank Over the Counter: Admin Pending', 'val_col' => 'otc_admin1_scrn', 'stat_col' => 'otc_admin1_status', 'reason_col' => 'otc_admin1_reason', 'type' => 'file'],
+    ['key' => 'otc_admin2', 'label' => 'Test Bank Over the Counter: Admin Validated', 'val_col' => 'otc_admin2_scrn', 'stat_col' => 'otc_admin2_status', 'reason_col' => 'otc_admin2_reason', 'type' => 'file'],
+    ['key' => 'postback', 'label' => 'Postback URL', 'val_col' => 'postback_url', 'stat_col' => 'postback_status', 'reason_col' => 'postback_reason', 'type' => 'text'],
+    ['key' => 'return', 'label' => 'Return URL', 'val_col' => 'return_url', 'stat_col' => 'return_url_status', 'reason_col' => 'return_url_reason', 'type' => 'text'],
+    ['key' => 'website', 'label' => 'Website URL', 'val_col' => 'website_url', 'stat_col' => 'website_status', 'reason_col' => 'website_reason', 'type' => 'text'],
+    ['key' => 'rsa', 'label' => 'RSA-SHA256 Check', 'val_col' => null, 'stat_col' => 'rsa_status', 'reason_col' => 'rsa_reason', 'type' => 'devops'],
+    ['key' => 'idem', 'label' => 'Idempotency Check', 'val_col' => null, 'stat_col' => 'idempotency_status', 'reason_col' => 'idempotency_reason', 'type' => 'devops'],
 ];
 
 // Handle Status Updates
@@ -38,7 +38,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
     
     foreach ($req_fields as $field) {
         $stat_col = $field['stat_col'];
-        $val_col = $field['val_col']; // The column holding the file path
+        $val_col = $field['val_col'];
+        $reason_col = $field['reason_col'];
 
         if (isset($_POST[$stat_col])) {
             $new_status = $_POST[$stat_col];
@@ -47,19 +48,21 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
             $set_clauses[] = "$stat_col = ?";
             $params[] = $new_status;
 
-            // 2. LOGIC TO DELETE REJECTED FILES
-            // If the status is rejected, AND it's a file requirement, AND a file exists in the DB
-            if ($new_status === 'rejected' && $field['type'] === 'file' && !empty($current_record[$val_col])) {
-                
-                $file_path = $current_record[$val_col];
-                
-                // Physically delete the file from the server if it exists
-                if (file_exists($file_path)) {
-                    unlink($file_path);
+            if ($new_status === 'rejected') {
+                // Save the reason if rejected
+                $reason = trim($_POST[$reason_col] ?? '');
+                $set_clauses[] = "$reason_col = ?";
+                $params[] = $reason;
+
+                // Delete the file if it's a file type
+                if ($field['type'] === 'file' && !empty($current_record[$val_col])) {
+                    $file_path = $current_record[$val_col];
+                    if (file_exists($file_path)) { unlink($file_path); }
+                    $set_clauses[] = "$val_col = NULL";
                 }
-                
-                // Set the database column to NULL so the UI knows it's empty
-                $set_clauses[] = "$val_col = NULL";
+            } else {
+                // If status is changed to pending/approved, wipe the reason clean
+                $set_clauses[] = "$reason_col = NULL";
             }
         }
     }
@@ -241,11 +244,19 @@ function renderBadge($status) {
                                 <td><?= renderBadge($status) ?></td>
                                 
                                 <td>
-                                    <select name="<?= $field['stat_col'] ?>">
+                                    <select name="<?= $field['stat_col'] ?>" onchange="toggleReason(this)">
                                         <option value="pending" <?= $status === 'pending' || $status === 'not_submitted' ? 'selected' : '' ?>>Pending Review</option>
                                         <option value="approved" <?= $status === 'approved' ? 'selected' : '' ?>>Approve</option>
                                         <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Reject</option>
                                     </select>
+                                    
+                                    <input type="text" 
+                                        name="<?= $field['reason_col'] ?>" 
+                                        value="<?= htmlspecialchars($sub[$field['reason_col']] ?? '') ?>" 
+                                        placeholder="Reason if rejected..." 
+                                        class="reason-input"
+                                        style="margin-top: 8px; width: 100%; padding: 6px; box-sizing: border-box; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; display: <?= $status === 'rejected' ? 'block' : 'none' ?>;"
+                                        required>
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -272,6 +283,25 @@ function renderBadge($status) {
 
     <?php endif; ?>
 </div>
+
+<script>
+function toggleReason(selectElement) {
+    // Find the input field that comes immediately after this specific dropdown
+    const reasonInput = selectElement.nextElementSibling;
+    
+    // If the status is changed to rejected, show the text box
+    if (selectElement.value === 'rejected') {
+        reasonInput.style.display = 'block';
+        reasonInput.required = true; // Force them to type a reason
+    } else {
+        // Otherwise, hide it and clear any text they might have typed
+        reasonInput.style.display = 'none';
+        reasonInput.value = ''; 
+        reasonInput.required = false;
+    }
+}
+</script>
+
 
 </body>
 </html>
