@@ -2,9 +2,6 @@
 session_start();
 require 'db.php';
 
-// Mock Login (In reality, use a proper login system)
-$_SESSION['user_id'] = 'DEVOPS01';
-$_SESSION['role'] = 'devops';
 $message = '';
 $last_edited_id = null; 
 

@@ -1,25 +1,49 @@
 <?php
+session_set_cookie_params(0);
 session_start();
-require 'db.php';
 
-// Mock Login (In reality, use a proper login system)
-$_SESSION['user_id'] = 'TESTMID';
-$_SESSION['role'] = 'merchant';
-$merchant_id = $_SESSION['user_id'];
+// Google Sheets No-Login Security Check
+if (!isset($_SESSION['merchant_id'])) {
+    header("Location: index.php");
+    exit;
+}
+
+require 'db.php'; // This should now be your Google API setup file
+$merchant_id = $_SESSION['merchant_id'];
+$merchant_name = $_SESSION['merchant_name'] ?? 'Unknown Merchant';
 $message = '';
 
-// Helper function to safely get status
-function getStatus($reqs, $key) {
-    return $reqs[$key] ?? 'not_submitted';
-}
+// --- GOOGLE SHEETS HELPER LOGIC ---
+$range = 'Sheet1!A:AG'; // Our full data range
+$all_data = getAllMerchants($service, $spreadsheetId, $range);
 
-function renderReason($status, $reason) {
-    if ($status === 'rejected' && !empty($reason)) {
-        return "<span style='color: #dc3545; font-size: 0.85rem; font-weight: bold;'>⚠️ " . htmlspecialchars($reason) . "</span>";
+$rowIndex = null;
+$currentRow = [];
+$reqs = [];
+
+// Find the merchant in the sheet
+foreach ($all_data as $index => $row) {
+    if (isset($row[0]) && strtoupper($row[0]) === $merchant_id) {
+        $rowIndex = $index + 1; // Google Sheets is 1-indexed
+        $currentRow = array_pad($row, 33, ''); // Ensure the array has 33 columns
+        
+        // Translate the flat sheet row back into our associative array for the UI
+        $reqs = [
+            'tbo_pay_scrn' => $currentRow[2], 'tbo_pay_status' => $currentRow[3], 'tbo_pay_reason' => $currentRow[4],
+            'tbo_return_scrn' => $currentRow[5], 'tbo_return_status' => $currentRow[6], 'tbo_return_reason' => $currentRow[7],
+            'otc_pay_scrn' => $currentRow[8], 'otc_pay_status' => $currentRow[9], 'otc_pay_reason' => $currentRow[10],
+            'otc_return_scrn' => $currentRow[11], 'otc_return_status' => $currentRow[12], 'otc_return_reason' => $currentRow[13],
+            'otc_admin1_scrn' => $currentRow[14], 'otc_admin1_status' => $currentRow[15], 'otc_admin1_reason' => $currentRow[16],
+            'otc_admin2_scrn' => $currentRow[17], 'otc_admin2_status' => $currentRow[18], 'otc_admin2_reason' => $currentRow[19],
+            'postback_url' => $currentRow[20], 'postback_status' => $currentRow[21], 'postback_reason' => $currentRow[22],
+            'return_url' => $currentRow[23], 'return_url_status' => $currentRow[24], 'return_url_reason' => $currentRow[25],
+            'website_url' => $currentRow[26], 'website_status' => $currentRow[27], 'website_reason' => $currentRow[28],
+            'rsa_status' => $currentRow[29], 'rsa_reason' => $currentRow[30],
+            'idempotency_status' => $currentRow[31], 'idempotency_reason' => $currentRow[32]
+        ];
+        break;
     }
-    return "<span style='color: #999;'>-</span>";
 }
-
 
 // Handle Form Submission
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reqs'])) {
@@ -30,114 +54,96 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['submit_reqs'])) {
         if (!empty($_FILES[$input_name]['name'])) {
             $filename = time() . '_' . basename($_FILES[$input_name]['name']);
             $target = $upload_dir . $filename;
-            if (move_uploaded_file($_FILES[$input_name]['tmp_name'], $target)) {
-                return $target;
-            }
+            if (move_uploaded_file($_FILES[$input_name]['tmp_name'], $target)) return $target;
         }
         return null;
     }
 
-    // Process TBO Files
+    // Process Files & Inputs
     $tbo_pay = handleUpload('tbo_pay_scrn', $upload_dir);
     $tbo_ret = handleUpload('tbo_return_scrn', $upload_dir);
-    
-    // Process OTC Files
     $otc_pay = handleUpload('otc_pay_scrn', $upload_dir);
     $otc_ret = handleUpload('otc_return_scrn', $upload_dir);
     $otc_admin1 = handleUpload('otc_admin1_scrn', $upload_dir);
     $otc_admin2 = handleUpload('otc_admin2_scrn', $upload_dir);
-
-    // Process URLs
+    
     $pb_url = $_POST['postback_url'] ?? null;
     $ret_url = $_POST['return_url'] ?? null;
     $web_url = $_POST['website_url'] ?? null;
 
-    // Check if record exists
-    $stmt = $pdo->prepare("SELECT id FROM requirements WHERE merchant_id = ?");
-    $stmt->execute([$merchant_id]);
-    
-    if ($stmt->rowCount() > 0) {
-        $updateFields = [];
-        $params = [];
-        
-        if ($tbo_pay) { $updateFields[] = "tbo_pay_scrn=?, tbo_pay_status='pending', tbo_pay_reason=NULL"; $params[] = $tbo_pay; }
-        if ($tbo_ret) { $updateFields[] = "tbo_return_scrn=?, tbo_return_status='pending', tbo_return_reason=NULL"; $params[] = $tbo_ret; }
-        if ($otc_pay) { $updateFields[] = "otc_pay_scrn=?, otc_pay_status='pending', otc_pay_reason=NULL"; $params[] = $otc_pay; }
-        if ($otc_ret) { $updateFields[] = "otc_return_scrn=?, otc_return_status='pending', otc_return_reason=NULL"; $params[] = $otc_ret; }
-        if ($otc_admin1) { $updateFields[] = "otc_admin1_scrn=?, otc_admin1_status='pending', otc_admin1_reason=NULL"; $params[] = $otc_admin1; }
-        if ($otc_admin2) { $updateFields[] = "otc_admin2_scrn=?, otc_admin2_status='pending', otc_admin2_reason=NULL"; $params[] = $otc_admin2; }
+    // Prepare data to write to Google Sheets
+    // If new merchant, start a fresh array. If existing, use their current row data.
+    $updateData = $rowIndex ? $currentRow : array_pad([$merchant_id, $merchant_name], 33, '');
 
-        if ($pb_url) { $updateFields[] = "postback_url=?, postback_status='pending', postback_reason=NULL"; $params[] = $pb_url; }
-        if ($ret_url) { $updateFields[] = "return_url=?, return_url_status='pending', return_url_reason=NULL"; $params[] = $ret_url; }
-        if ($web_url) { $updateFields[] = "website_url=?, website_status='pending', website_reason=NULL"; $params[] = $web_url; }
+    $made_changes = false;
 
-        if (!empty($updateFields)) {
-            $updateQuery = "UPDATE requirements SET " . implode(', ', $updateFields) . " WHERE merchant_id = ?";
-            $params[] = $merchant_id;
-            $pdo->prepare($updateQuery)->execute($params);
+    // Map inputs to exact Google Sheet Columns. Set to pending, wipe reason.
+    if ($tbo_pay) { $updateData[2] = $tbo_pay; $updateData[3] = 'pending'; $updateData[4] = ''; $made_changes = true; }
+    if ($tbo_ret) { $updateData[5] = $tbo_ret; $updateData[6] = 'pending'; $updateData[7] = ''; $made_changes = true; }
+    if ($otc_pay) { $updateData[8] = $otc_pay; $updateData[9] = 'pending'; $updateData[10] = ''; $made_changes = true; }
+    if ($otc_ret) { $updateData[11] = $otc_ret; $updateData[12] = 'pending'; $updateData[13] = ''; $made_changes = true; }
+    if ($otc_admin1) { $updateData[14] = $otc_admin1; $updateData[15] = 'pending'; $updateData[16] = ''; $made_changes = true; }
+    if ($otc_admin2) { $updateData[17] = $otc_admin2; $updateData[18] = 'pending'; $updateData[19] = ''; $made_changes = true; }
+    if ($pb_url) { $updateData[20] = $pb_url; $updateData[21] = 'pending'; $updateData[22] = ''; $made_changes = true; }
+    if ($ret_url) { $updateData[23] = $ret_url; $updateData[24] = 'pending'; $updateData[25] = ''; $made_changes = true; }
+    if ($web_url) { $updateData[26] = $web_url; $updateData[27] = 'pending'; $updateData[28] = ''; $made_changes = true; }
+
+    if ($made_changes) {
+        $body = new Google_Service_Sheets_ValueRange(['values' => [$updateData]]);
+        $params = ['valueInputOption' => 'USER_ENTERED'];
+
+        if ($rowIndex) {
+            // Update existing row
+            $updateRange = "Sheet1!A{$rowIndex}:AG{$rowIndex}";
+            $service->spreadsheets_values->update($spreadsheetId, $updateRange, $body, $params);
             $message = "<div class='alert alert-success'>Requirements updated successfully!</div>";
+        } else {
+            // Append new merchant row
+            $service->spreadsheets_values->append($spreadsheetId, $range, $body, $params);
+            $message = "<div class='alert alert-success'>Requirements submitted successfully!</div>";
         }
-    } else {
-        $stmt = $pdo->prepare("INSERT INTO requirements 
-            (merchant_id, tbo_pay_scrn, tbo_return_scrn, otc_pay_scrn, otc_return_scrn, otc_admin1_scrn, otc_admin2_scrn, postback_url, return_url, website_url) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-        $stmt->execute([$merchant_id, $tbo_pay, $tbo_ret, $otc_pay, $otc_ret, $otc_admin1, $otc_admin2, $pb_url, $ret_url, $web_url]);
-        $message = "<div class='alert alert-success'>Requirements submitted successfully!</div>";
+        
+        // Refresh the page so the UI updates immediately with the new Google Sheet data
+        header("Refresh:0");
+        exit;
     }
 }
 
-// Fetch current statuses
-$stmt = $pdo->prepare("SELECT * FROM requirements WHERE merchant_id = ?");
-$stmt->execute([$merchant_id]);
-$reqs = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
+// UI Helper Functions
+function getStatus($reqs, $key) { return $reqs[$key] ?? 'not_submitted'; }
+function needsAction($status) { return ($status === 'not_submitted' || $status === 'rejected' || empty($status)); }
 
-// Map all statuses, including DevOps ones
+function renderBadge($status) {
+    if (empty($status) || $status === 'not_submitted') return "<span class='badge badge-secondary'>Not Submitted</span>";
+    if ($status === 'pending') return "<span class='badge badge-warning'>Pending Review</span>";
+    if ($status === 'approved') return "<span class='badge badge-success'>Approved</span>";
+    if ($status === 'rejected') return "<span class='badge badge-danger'>Rejected</span>";
+    return "<span class='badge badge-secondary'>Unknown</span>";
+}
+
+function renderReason($status, $reason) {
+    if ($status === 'rejected' && !empty($reason)) {
+        return "<span style='color: #dc3545; font-size: 0.85rem; font-weight: bold;'>⚠️ " . htmlspecialchars($reason) . "</span>";
+    }
+    return "<span style='color: #999;'>-</span>";
+}
+
+// Map all statuses for the UI loops
 $statuses = [
-    'tbo_pay' => getStatus($reqs, 'tbo_pay_status'),
-    'tbo_ret' => getStatus($reqs, 'tbo_return_status'),
-    'otc_pay' => getStatus($reqs, 'otc_pay_status'),
-    'otc_ret' => getStatus($reqs, 'otc_return_status'),
-    'otc_admin1' => getStatus($reqs, 'otc_admin1_status'),
-    'otc_admin2' => getStatus($reqs, 'otc_admin2_status'),
-    'postback' => getStatus($reqs, 'postback_status'),
-    'return' => getStatus($reqs, 'return_url_status'),
-    'website' => getStatus($reqs, 'website_status'),
-    'rsa' => getStatus($reqs, 'rsa_status'),
+    'tbo_pay' => getStatus($reqs, 'tbo_pay_status'), 'tbo_ret' => getStatus($reqs, 'tbo_return_status'),
+    'otc_pay' => getStatus($reqs, 'otc_pay_status'), 'otc_ret' => getStatus($reqs, 'otc_return_status'),
+    'otc_admin1' => getStatus($reqs, 'otc_admin1_status'), 'otc_admin2' => getStatus($reqs, 'otc_admin2_status'),
+    'postback' => getStatus($reqs, 'postback_status'), 'return' => getStatus($reqs, 'return_url_status'),
+    'website' => getStatus($reqs, 'website_status'), 'rsa' => getStatus($reqs, 'rsa_status'),
     'idem' => getStatus($reqs, 'idempotency_status')
 ];
 
-// Define which items the merchant actually needs to upload/submit
 $merchant_actionable = ['tbo_pay', 'tbo_ret', 'otc_pay', 'otc_ret', 'otc_admin1', 'otc_admin2', 'postback', 'return', 'website'];
-
-function needsAction($status) {
-    return ($status === 'not_submitted' || $status === 'rejected');
-}
-
-// 1. Check if the merchant needs to submit anything
 $needs_submission = false;
-foreach ($merchant_actionable as $key) {
-    if (needsAction($statuses[$key])) { 
-        $needs_submission = true; 
-        break; 
-    }
-}
+foreach ($merchant_actionable as $key) { if (needsAction($statuses[$key])) { $needs_submission = true; break; } }
 
-// 2. Check if ABSOLUTELY EVERYTHING is approved
 $all_approved = true;
-foreach ($statuses as $key => $status) {
-    if ($status !== 'approved') {
-        $all_approved = false;
-        break;
-    }
-}
-
-function renderBadge($status) {
-    $class = 'badge-secondary'; $text = 'Not Submitted';
-    if ($status === 'pending') { $class = 'badge-warning'; $text = 'Pending Review'; }
-    elseif ($status === 'approved') { $class = 'badge-success'; $text = 'Approved'; }
-    elseif ($status === 'rejected') { $class = 'badge-danger'; $text = 'Rejected'; }
-    return "<span class='badge $class'>$text</span>";
-}
+foreach ($statuses as $key => $status) { if ($status !== 'approved') { $all_approved = false; break; } }
 ?>
 
 <!DOCTYPE html>
@@ -168,11 +174,7 @@ function renderBadge($status) {
         .form-group input[type="file"], .form-group input[type="text"] { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         .btn { background-color: var(--primary); color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 1rem; width: 100%; margin-top: 15px; }
         .btn:hover { background-color: #b64545; }
-        .alert { padding: 15px; border-radius: 4px; margin-bottom: 20px; }
-        .alert-success { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; }
-        
-        /* New Custom Message Boxes */
         .msg-box { text-align: center; padding: 40px 20px; border-radius: 8px; border: 1px solid transparent; }
         .msg-approved { background-color: #d4edda; color: #155724; border-color: #c3e6cb; }
         .msg-pending { background-color: #cce5ff; color: #004085; border-color: #b8daff; }
@@ -183,8 +185,14 @@ function renderBadge($status) {
 <body>
 
 <div class="top-bar">
-    <h2>Merchant Dashboard</h2>
-    <span>Welcome, <strong><?= htmlspecialchars($merchant_id) ?></strong></span>
+    <div>
+        <h2 style="margin: 0;">Merchant Dashboard</h2>
+        <span style="font-size: 0.9rem; color: #666;">Welcome, <strong><?= htmlspecialchars($merchant_id) ?></strong> (<?= htmlspecialchars($merchant_name) ?>)</span>
+    </div>
+    
+    <a href="logout.php" style="background-color: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 0.9rem;">
+        Log Out
+    </a>
 </div>
 
 <?= $message ?>
@@ -199,32 +207,32 @@ function renderBadge($status) {
                 <th width="35%">Remarks</th>
             </tr>
             <tr>
-                <td>Test Bank Online: Pay.aspx</td>
+                <td>TBO: Pay.aspx</td>
                 <td><?= renderBadge($statuses['tbo_pay']) ?></td>
                 <td><?= renderReason($statuses['tbo_pay'], $reqs['tbo_pay_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>Test Bank Online: Return URL</td>
+                <td>TBO: Return URL</td>
                 <td><?= renderBadge($statuses['tbo_ret']) ?></td>
                 <td><?= renderReason($statuses['tbo_ret'], $reqs['tbo_return_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>Test Bank Over the Counter: Pay.aspx</td>
+                <td>OTC: Pay.aspx</td>
                 <td><?= renderBadge($statuses['otc_pay']) ?></td>
                 <td><?= renderReason($statuses['otc_pay'], $reqs['otc_pay_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>Test Bank Over the Counter: Return URL</td>
+                <td>OTC: Return URL</td>
                 <td><?= renderBadge($statuses['otc_ret']) ?></td>
                 <td><?= renderReason($statuses['otc_ret'], $reqs['otc_return_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>Test Bank Over the Counter: Admin Pending</td>
+                <td>OTC: Admin Pending</td>
                 <td><?= renderBadge($statuses['otc_admin1']) ?></td>
                 <td><?= renderReason($statuses['otc_admin1'], $reqs['otc_admin1_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>Test Bank Over the Counter: Admin Validated</td>
+                <td>OTC: Admin Validated</td>
                 <td><?= renderBadge($statuses['otc_admin2']) ?></td>
                 <td><?= renderReason($statuses['otc_admin2'], $reqs['otc_admin2_reason'] ?? '') ?></td>
             </tr>
@@ -270,15 +278,15 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['tbo_pay'])): ?>
                 <div class="form-group">
-                    <label>1. Test Bank Online: Pay.aspx</label>
-                    <small>Screenshot the Dragonpay Pay.aspx payment method selection page (include the address bar).</small>
+                    <label>1. TBO: Pay.aspx</label>
+                    <small>Screenshot the Dragonpay Pay.aspx payment method selection page.</small>
                     <input type="file" name="tbo_pay_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['tbo_ret'])): ?>
                 <div class="form-group">
-                    <label>2. Test Bank Online: Return URL</label>
+                    <label>2. TBO: Return URL</label>
                     <small>Select 'Test Bank Online', proceed with the payment, and screenshot the Return URL page.</small>
                     <input type="file" name="tbo_return_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -290,15 +298,15 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['otc_pay'])): ?>
                 <div class="form-group">
-                    <label>1. Test Bank Over the Counter: Pay.aspx</label>
-                    <small>Screenshot the Dragonpay Pay.aspx payment method selection page (include the address bar).</small>
+                    <label>1. OTC: Pay.aspx</label>
+                    <small>Screenshot the Dragonpay Pay.aspx payment method selection page.</small>
                     <input type="file" name="otc_pay_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['otc_ret'])): ?>
                 <div class="form-group">
-                    <label>2. Test Bank Over the Counter: Return URL</label>
+                    <label>2. OTC: Return URL</label>
                     <small>Click on 'Send instructions via email', then screenshot the Return URL page.</small>
                     <input type="file" name="otc_return_scrn" accept="image/png, image/jpeg">
                 </div>
@@ -306,16 +314,16 @@ function renderBadge($status) {
 
                 <?php if (needsAction($statuses['otc_admin1'])): ?>
                 <div class="form-group">
-                    <label>3. Test Bank Over the Counter: Admin Orders (Pending)</label>
-                    <small>Go to your Admin > Orders page or your database. Capture a screenshot showing the transaction ID and status.</small>
+                    <label>3. OTC: Admin Orders (Pending)</label>
+                    <small>Capture a screenshot showing the transaction ID and status.</small>
                     <input type="file" name="otc_admin1_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['otc_admin2'])): ?>
                 <div class="form-group">
-                    <label>4. Test Bank Over the Counter: Admin Orders (Validated)</label>
-                    <small>Follow the emailed instructions, complete 'Step 2. Validation'. Screenshot the Admin > Orders page again, showing the updated status.</small>
+                    <label>4. OTC: Admin Orders (Validated)</label>
+                    <small>Screenshot the Admin > Orders page again, showing the updated status.</small>
                     <input type="file" name="otc_admin2_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
