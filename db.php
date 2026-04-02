@@ -3,7 +3,7 @@ require 'vendor/autoload.php';
 
 // Google Sheets Setup
 $spreadsheetId = '1VyXfPMVSZnnccq3XcF6zHcbMkWWFDx1duRYYNck2bPw'; // Replace with your ID
-$range = 'Sheet1!A:Z'; // Assumes your sheet is named 'Sheet1'
+$range = 'Sheet1!A:AG'; // Assumes your sheet is named 'Sheet1'
 
 $client = new \Google_Client();
 $client->setApplicationName('Tech Requirements Portal');

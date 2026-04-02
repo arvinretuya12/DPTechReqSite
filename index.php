@@ -39,7 +39,7 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 </head>
 <body>
     <div class="login-card">
-        <h2 style="text-align: center; color: #b30000;">Technical Requirements Portal</h2>
+        <h2 style="text-align: center; color: #b30000;">Merchant Technical Requirements Portal</h2>
         <p style="text-align: center; color: #666; font-size: 0.9rem;">Enter your details to submit or monitor your requirements.</p>
         
         <?php if(isset($error)) echo "<p style='color:red; text-align:center;'>$error</p>"; ?>

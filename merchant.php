@@ -207,32 +207,32 @@ foreach ($statuses as $key => $status) { if ($status !== 'approved') { $all_appr
                 <th width="35%">Remarks</th>
             </tr>
             <tr>
-                <td>TBO: Pay.aspx</td>
+                <td>Test Bank Online: Pay.aspx</td>
                 <td><?= renderBadge($statuses['tbo_pay']) ?></td>
                 <td><?= renderReason($statuses['tbo_pay'], $reqs['tbo_pay_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>TBO: Return URL</td>
+                <td>Test Bank Online: Return URL</td>
                 <td><?= renderBadge($statuses['tbo_ret']) ?></td>
                 <td><?= renderReason($statuses['tbo_ret'], $reqs['tbo_return_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>OTC: Pay.aspx</td>
+                <td>Test Bank Over-the-counter: Pay.aspx</td>
                 <td><?= renderBadge($statuses['otc_pay']) ?></td>
                 <td><?= renderReason($statuses['otc_pay'], $reqs['otc_pay_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>OTC: Return URL</td>
+                <td>Test Bank Over-the-counter: Return URL</td>
                 <td><?= renderBadge($statuses['otc_ret']) ?></td>
                 <td><?= renderReason($statuses['otc_ret'], $reqs['otc_return_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>OTC: Admin Pending</td>
+                <td>Test Bank Over-the-counter: Admin Pending</td>
                 <td><?= renderBadge($statuses['otc_admin1']) ?></td>
                 <td><?= renderReason($statuses['otc_admin1'], $reqs['otc_admin1_reason'] ?? '') ?></td>
             </tr>
             <tr>
-                <td>OTC: Admin Validated</td>
+                <td>Test Bank Over-the-counter: Admin Validated</td>
                 <td><?= renderBadge($statuses['otc_admin2']) ?></td>
                 <td><?= renderReason($statuses['otc_admin2'], $reqs['otc_admin2_reason'] ?? '') ?></td>
             </tr>
@@ -278,16 +278,16 @@ foreach ($statuses as $key => $status) { if ($status !== 'approved') { $all_appr
 
                 <?php if (needsAction($statuses['tbo_pay'])): ?>
                 <div class="form-group">
-                    <label>1. TBO: Pay.aspx</label>
-                    <small>Screenshot the Dragonpay Pay.aspx payment method selection page.</small>
+                    <label>1. Test Bank Online: Pay.aspx</label>
+                    <small>Capture a screenshot of the Dragonpay Pay.aspx payment method selection page (including the address bar).</small>
                     <input type="file" name="tbo_pay_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['tbo_ret'])): ?>
                 <div class="form-group">
-                    <label>2. TBO: Return URL</label>
-                    <small>Select 'Test Bank Online', proceed with the payment, and screenshot the Return URL page.</small>
+                    <label>2. Test Bank Online: Return URL</label>
+                    <small>Capture a screenshot of the Return URL page.</small>
                     <input type="file" name="tbo_return_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
@@ -298,32 +298,32 @@ foreach ($statuses as $key => $status) { if ($status !== 'approved') { $all_appr
 
                 <?php if (needsAction($statuses['otc_pay'])): ?>
                 <div class="form-group">
-                    <label>1. OTC: Pay.aspx</label>
-                    <small>Screenshot the Dragonpay Pay.aspx payment method selection page.</small>
+                    <label>1. Test Bank Over-the-Counter: Pay.aspx</label>
+                    <small>Capture a screenshot of the Dragonpay Pay.aspx payment method selection page (including the address bar).</small>
                     <input type="file" name="otc_pay_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['otc_ret'])): ?>
                 <div class="form-group">
-                    <label>2. OTC: Return URL</label>
-                    <small>Click on 'Send instructions via email', then screenshot the Return URL page.</small>
+                    <label>2. Test Bank Over-the-counter: Return URL</label>
+                    <small>Capture a screenshot of the Return URL page.</small>
                     <input type="file" name="otc_return_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['otc_admin1'])): ?>
                 <div class="form-group">
-                    <label>3. OTC: Admin Orders (Pending)</label>
-                    <small>Capture a screenshot showing the transaction ID and status.</small>
+                    <label>3. Test Bank Over-the-counter: Admin Orders (Pending)</label>
+                    <small>Capture a screenshot of your database showing the transaction ID and its status (U or P).</small>
                     <input type="file" name="otc_admin1_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>
 
                 <?php if (needsAction($statuses['otc_admin2'])): ?>
                 <div class="form-group">
-                    <label>4. OTC: Admin Orders (Validated)</label>
-                    <small>Screenshot the Admin > Orders page again, showing the updated status.</small>
+                    <label>4. Test Bank Over-the-counter: Admin Orders (Validated)</label>
+                    <small>Capture a final screenshot of your Orders page or database, showing the updated transaction status.</small>
                     <input type="file" name="otc_admin2_scrn" accept="image/png, image/jpeg">
                 </div>
                 <?php endif; ?>

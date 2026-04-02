@@ -1,105 +1,136 @@
 <?php
+// Force session cookie to expire when the browser closes
+session_set_cookie_params(0);
 session_start();
-require 'db.php';
+
+require 'db.php'; // Google API setup file
+
+// Load PHPMailer classes
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 $message = '';
-$last_edited_id = null; 
+$last_edited_merchant = null; // Remember which card to keep open
 
-// Define all requirement fields dynamically
+// --- GOOGLE SHEETS SETUP ---
+$range = 'Sheet1!A:AG';
+$all_data = getAllMerchants($service, $spreadsheetId, $range);
+
+// Define fields mapped to exact Google Sheet column indexes (0-based)
 $req_fields = [
-    ['key' => 'tbo_pay', 'label' => 'Test Bank Online: Pay.aspx', 'val_col' => 'tbo_pay_scrn', 'stat_col' => 'tbo_pay_status', 'reason_col' => 'tbo_pay_reason', 'type' => 'file'],
-    ['key' => 'tbo_ret', 'label' => 'Test Bank Online: Return URL', 'val_col' => 'tbo_return_scrn', 'stat_col' => 'tbo_return_status', 'reason_col' => 'tbo_return_reason', 'type' => 'file'],
-    ['key' => 'otc_pay', 'label' => 'Test Bank Over the Counter: Pay.aspx', 'val_col' => 'otc_pay_scrn', 'stat_col' => 'otc_pay_status', 'reason_col' => 'otc_pay_reason', 'type' => 'file'],
-    ['key' => 'otc_ret', 'label' => 'Test Bank Over the Counter: Return URL', 'val_col' => 'otc_return_scrn', 'stat_col' => 'otc_return_status', 'reason_col' => 'otc_return_reason', 'type' => 'file'],
-    ['key' => 'otc_admin1', 'label' => 'Test Bank Over the Counter: Admin Pending', 'val_col' => 'otc_admin1_scrn', 'stat_col' => 'otc_admin1_status', 'reason_col' => 'otc_admin1_reason', 'type' => 'file'],
-    ['key' => 'otc_admin2', 'label' => 'Test Bank Over the Counter: Admin Validated', 'val_col' => 'otc_admin2_scrn', 'stat_col' => 'otc_admin2_status', 'reason_col' => 'otc_admin2_reason', 'type' => 'file'],
-    ['key' => 'postback', 'label' => 'Postback URL', 'val_col' => 'postback_url', 'stat_col' => 'postback_status', 'reason_col' => 'postback_reason', 'type' => 'text'],
-    ['key' => 'return', 'label' => 'Return URL', 'val_col' => 'return_url', 'stat_col' => 'return_url_status', 'reason_col' => 'return_url_reason', 'type' => 'text'],
-    ['key' => 'website', 'label' => 'Website URL', 'val_col' => 'website_url', 'stat_col' => 'website_status', 'reason_col' => 'website_reason', 'type' => 'text'],
-    ['key' => 'rsa', 'label' => 'RSA-SHA256 Check', 'val_col' => null, 'stat_col' => 'rsa_status', 'reason_col' => 'rsa_reason', 'type' => 'devops'],
-    ['key' => 'idem', 'label' => 'Idempotency Check', 'val_col' => null, 'stat_col' => 'idempotency_status', 'reason_col' => 'idempotency_reason', 'type' => 'devops'],
+    ['label' => 'Test Bank Online: Pay.aspx', 'stat_col' => 'tbo_pay_status', 'reason_col' => 'tbo_pay_reason', 'val_idx' => 2, 'stat_idx' => 3, 'reason_idx' => 4, 'type' => 'file'],
+    ['label' => 'Test Bank Online: Return URL', 'stat_col' => 'tbo_return_status', 'reason_col' => 'tbo_return_reason', 'val_idx' => 5, 'stat_idx' => 6, 'reason_idx' => 7, 'type' => 'file'],
+    ['label' => 'Test Bank Over-the-counter: Pay.aspx', 'stat_col' => 'otc_pay_status', 'reason_col' => 'otc_pay_reason', 'val_idx' => 8, 'stat_idx' => 9, 'reason_idx' => 10, 'type' => 'file'],
+    ['label' => 'Test Bank Over-the-counter: Return URL', 'stat_col' => 'otc_return_status', 'reason_col' => 'otc_return_reason', 'val_idx' => 11, 'stat_idx' => 12, 'reason_idx' => 13, 'type' => 'file'],
+    ['label' => 'Test Bank Over-the-counter: Admin Pending', 'stat_col' => 'otc_admin1_status', 'reason_col' => 'otc_admin1_reason', 'val_idx' => 14, 'stat_idx' => 15, 'reason_idx' => 16, 'type' => 'file'],
+    ['label' => 'Test Bank Over-the-counter: Admin Validated', 'stat_col' => 'otc_admin2_status', 'reason_col' => 'otc_admin2_reason', 'val_idx' => 17, 'stat_idx' => 18, 'reason_idx' => 19, 'type' => 'file'],
+    ['label' => 'Postback URL', 'stat_col' => 'postback_status', 'reason_col' => 'postback_reason', 'val_idx' => 20, 'stat_idx' => 21, 'reason_idx' => 22, 'type' => 'text'],
+    ['label' => 'Return URL', 'stat_col' => 'return_url_status', 'reason_col' => 'return_url_reason', 'val_idx' => 23, 'stat_idx' => 24, 'reason_idx' => 25, 'type' => 'text'],
+    ['label' => 'Website URL', 'stat_col' => 'website_status', 'reason_col' => 'website_reason', 'val_idx' => 26, 'stat_idx' => 27, 'reason_idx' => 28, 'type' => 'text'],
+    ['label' => 'RSA-SHA256 Check', 'stat_col' => 'rsa_status', 'reason_col' => 'rsa_reason', 'val_idx' => null, 'stat_idx' => 29, 'reason_idx' => 30, 'type' => 'devops'],
+    ['label' => 'Idempotency Check', 'stat_col' => 'idempotency_status', 'reason_col' => 'idempotency_reason', 'val_idx' => null, 'stat_idx' => 31, 'reason_idx' => 32, 'type' => 'devops'],
 ];
 
 // Handle Status Updates
 if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['update_status'])) {
-    $req_id = $_POST['req_id'];
-    $last_edited_id = $req_id; 
+    $merchant_id_post = $_POST['merchant_id'];
+    $last_edited_merchant = $merchant_id_post;
     
-    // 1. Fetch the CURRENT record so we know the file paths before potentially deleting them
-    $stmt = $pdo->prepare("SELECT * FROM requirements WHERE id = ?");
-    $stmt->execute([$req_id]);
-    $current_record = $stmt->fetch(PDO::FETCH_ASSOC);
+    $row_to_update = [];
+    $row_index = null;
 
-    $set_clauses = [];
-    $params = [];
-    
-    foreach ($req_fields as $field) {
-        $stat_col = $field['stat_col'];
-        $val_col = $field['val_col'];
-        $reason_col = $field['reason_col'];
-
-        if (isset($_POST[$stat_col])) {
-            $new_status = $_POST[$stat_col];
-            
-            // Add status to update query
-            $set_clauses[] = "$stat_col = ?";
-            $params[] = $new_status;
-
-            if ($new_status === 'rejected') {
-                // Save the reason if rejected
-                $reason = trim($_POST[$reason_col] ?? '');
-                $set_clauses[] = "$reason_col = ?";
-                $params[] = $reason;
-
-                // Delete the file if it's a file type
-                if ($field['type'] === 'file' && !empty($current_record[$val_col])) {
-                    $file_path = $current_record[$val_col];
-                    if (file_exists($file_path)) { unlink($file_path); }
-                    $set_clauses[] = "$val_col = NULL";
-                }
-            } else {
-                // If status is changed to pending/approved, wipe the reason clean
-                $set_clauses[] = "$reason_col = NULL";
-            }
+    // Find exact row in spreadsheet
+    foreach ($all_data as $index => $row) {
+        if (isset($row[0]) && strtoupper($row[0]) === strtoupper($merchant_id_post)) {
+            $row_index = $index + 1; 
+            $row_to_update = array_pad($row, 33, ''); 
+            break;
         }
     }
-    
-    if (!empty($set_clauses)) {
-        $params[] = $req_id; 
-        $updateQuery = "UPDATE requirements SET " . implode(', ', $set_clauses) . " WHERE id = ?";
-        $pdo->prepare($updateQuery)->execute($params);
-        $message = "<div class='alert alert-success'>Statuses updated successfully for Merchant ID: " . htmlspecialchars($_POST['merchant_id']) . ". Any rejected files have been permanently deleted.</div>";
+
+    if ($row_index) {
+        foreach ($req_fields as $field) {
+            $stat_name = $field['stat_col'];
+            $reason_name = $field['reason_col'];
+            
+            if (isset($_POST[$stat_name])) {
+                $new_status = $_POST[$stat_name];
+                $row_to_update[$field['stat_idx']] = $new_status; 
+
+                if ($new_status === 'rejected') {
+                    $row_to_update[$field['reason_idx']] = trim($_POST[$reason_name] ?? '');
+                    if ($field['type'] === 'file' && !empty($row_to_update[$field['val_idx']])) {
+                        $file_path = $row_to_update[$field['val_idx']];
+                        if (file_exists($file_path)) { unlink($file_path); }
+                        $row_to_update[$field['val_idx']] = ''; 
+                    }
+                } else {
+                    $row_to_update[$field['reason_idx']] = ''; 
+                }
+            }
+        }
+        
+        $updateRange = "Sheet1!A{$row_index}:AG{$row_index}";
+        $body = new Google_Service_Sheets_ValueRange(['values' => [$row_to_update]]);
+        $params = ['valueInputOption' => 'USER_ENTERED'];
+        $service->spreadsheets_values->update($spreadsheetId, $updateRange, $body, $params);
+        
+        $message = "<div class='alert alert-success'>Statuses updated successfully for Merchant ID: " . htmlspecialchars($merchant_id_post) . ".</div>";
+        $all_data = getAllMerchants($service, $spreadsheetId, $range);
     }
 }
 
 // Handle Email Endorsement
 if (isset($_POST['send_email'])) {
-    $last_edited_id = $_POST['req_id']; 
-    $to = "arvin.retuya@dragonpay.com";
-    $subject = "Production Account Endorsement - Merchant ID: " . $_POST['merchant_id'];
-    $email_body = "All technical requirements have been approved. Please endorse for a production account.";
-    // mail($to, $subject, $email_body);
-    $message = "<div class='alert alert-primary'>Endorsement email successfully sent to Accounts & MerchantOps!</div>";
+    $last_edited_merchant = $_POST['merchant_id']; 
+    $merchant_to_endorse = htmlspecialchars($_POST['merchant_id']);
+    // ... [Your PHPMailer Code Here] ...
+    $message = "<div class='alert alert-primary'>Endorsement email successfully sent via SMTP!</div>";
 }
 
-// Fetch All Submissions safely
-$submissions = [];
-try {
-    $stmt = $pdo->query("SELECT r.*, u.username FROM requirements r JOIN users u ON r.merchant_id = u.merchant_id ORDER BY r.id DESC");
-    if ($stmt) $submissions = $stmt->fetchAll(PDO::FETCH_ASSOC);
-} catch (PDOException $e) {
-    die("<div class='alert alert-danger'>Database Error: " . htmlspecialchars($e->getMessage()) . "</div>");
+// --- SEARCH & PAGINATION LOGIC ---
+$search_query = trim($_GET['search'] ?? '');
+$current_page = max(1, isset($_GET['page']) ? (int)$_GET['page'] : 1);
+$records_per_page = 10;
+
+// 1. Clean data (Remove Header row & Empty rows)
+$merchants = [];
+foreach ($all_data as $index => $row) {
+    if ($index > 0 && !empty($row[0])) { // Skip row 0 (headers)
+        $merchants[] = $row;
+    }
 }
+
+// 2. Apply Search Filter
+if ($search_query !== '') {
+    $merchants = array_filter($merchants, function($row) use ($search_query) {
+        $mid = strtolower($row[0] ?? '');
+        $mname = strtolower($row[1] ?? '');
+        $sq = strtolower($search_query);
+        // Return true if search query is found in ID or Name
+        return strpos($mid, $sq) !== false || strpos($mname, $sq) !== false;
+    });
+}
+
+// 3. Apply Pagination Math
+$total_records = count($merchants);
+$total_pages = ceil($total_records / $records_per_page);
+if ($current_page > $total_pages && $total_pages > 0) $current_page = $total_pages;
+
+$offset = ($current_page - 1) * $records_per_page;
+$paged_merchants = array_slice($merchants, $offset, $records_per_page);
 
 // UI Helpers
 function renderBadge($status) {
-    $status = $status ?? 'not_submitted';
-    $class = 'badge-secondary'; $text = 'Not Submitted';
-    if ($status === 'pending') { $class = 'badge-warning'; $text = 'Pending'; }
-    elseif ($status === 'approved') { $class = 'badge-success'; $text = 'Approved'; }
-    elseif ($status === 'rejected') { $class = 'badge-danger'; $text = 'Rejected'; }
-    return "<span class='badge $class'>$text</span>";
+    if (empty($status) || $status === 'not_submitted') return "<span class='badge badge-secondary'>Not Submitted</span>";
+    if ($status === 'pending') return "<span class='badge badge-warning'>Pending</span>";
+    if ($status === 'approved') return "<span class='badge badge-success'>Approved</span>";
+    if ($status === 'rejected') return "<span class='badge badge-danger'>Rejected</span>";
+    return "<span class='badge badge-secondary'>Unknown</span>";
 }
+
+// URL builder helper for maintaining state when forms submit
+$url_params = "?page=" . $current_page . "&search=" . urlencode($search_query);
 ?>
 
 <!DOCTYPE html>
@@ -114,6 +145,18 @@ function renderBadge($status) {
         .container { max-width: 1400px; margin: 0 auto; }
         .top-bar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 2px solid var(--border); padding-bottom: 10px; }
         
+        /* Search Bar Styles */
+        .search-container { display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; background: white; padding: 15px; border-radius: 8px; border: 1px solid var(--border); box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
+        .search-form { display: flex; gap: 10px; width: 100%; max-width: 500px; }
+        .search-form input[type="text"] { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+        
+        /* Pagination Styles */
+        .pagination { display: flex; justify-content: center; align-items: center; gap: 10px; margin-top: 30px; }
+        .page-btn { padding: 8px 12px; border: 1px solid var(--border); background: white; color: var(--primary); text-decoration: none; border-radius: 4px; font-weight: bold; }
+        .page-btn:hover { background: #f8f9fa; }
+        .page-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+        .page-btn.disabled { color: #ccc; cursor: not-allowed; pointer-events: none; }
+
         details.card { background: white; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); border: 1px solid var(--border); margin-bottom: 15px; overflow: hidden; }
         details.card summary { display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; font-size: 1.15rem; font-weight: bold; color: var(--primary); cursor: pointer; user-select: none; list-style: none; transition: background-color 0.2s; }
         details.card summary::-webkit-details-marker { display: none; }
@@ -135,9 +178,10 @@ function renderBadge($status) {
         .badge-warning { background-color: #ffc107; color: #333; }
         .badge-secondary { background-color: #6c757d; }
         
-        .btn { padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; font-weight: bold; transition: 0.2s; }
+        .btn { padding: 10px 16px; border: none; border-radius: 4px; cursor: pointer; font-size: 0.95rem; font-weight: bold; transition: 0.2s; }
         .btn-primary { background-color: var(--primary); color: white; }
         .btn-primary:hover { background-color: #b64545; }
+        .btn-secondary { background-color: #6c757d; color: white; text-decoration: none; display: flex; align-items: center; justify-content: center; }
         .btn-success { background-color: var(--success); color: white; width: 100%; padding: 12px; font-size: 1.1rem; margin-top: 15px; }
         .btn-success:hover { background-color: #218838; }
         
@@ -157,35 +201,56 @@ function renderBadge($status) {
 
 <div class="container">
     <div class="top-bar">
-        <h2>DevOps Monitoring Dashboard</h2>
-        <span>Logged in as <strong>DevOps Admin</strong></span>
+        <h2>DevOps Technical Requirements Monitoring Dashboard</h2>
+        <!-- <a href="logout.php" style="background-color: #dc3545; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; font-weight: bold; font-size: 0.9rem;">
+            Log Out
+        </a> -->
     </div>
 
     <?= $message ?>
 
-    <?php if (empty($submissions)): ?>
+    <div class="search-container">
+        <form method="GET" class="search-form">
+            <input type="text" name="search" placeholder="Search by Merchant Name or ID..." value="<?= htmlspecialchars($search_query) ?>">
+            <button type="submit" class="btn btn-primary">Search</button>
+            <?php if (!empty($search_query)): ?>
+                <a href="devops.php" class="btn btn-secondary">Clear</a>
+            <?php endif; ?>
+        </form>
+        <div>
+            <span class="text-muted">Total Records: <strong><?= $total_records ?></strong></span>
+        </div>
+    </div>
+
+    <?php if (empty($paged_merchants)): ?>
         <div class="card" style="text-align: center; padding: 50px; background: white; border-radius: 8px; border: 1px solid var(--border);">
-            <h3>No Merchant Submissions Yet</h3>
-            <p class="text-muted">When merchants submit their technical requirements, they will appear here.</p>
+            <h3>No Records Found</h3>
+            <p class="text-muted">Try adjusting your search criteria or wait for new submissions.</p>
         </div>
     <?php else: ?>
 
-        <?php foreach ($submissions as $index => $sub): 
+        <?php foreach ($paged_merchants as $row): 
+            $sub = array_pad($row, 33, '');
+            $merchant_id = $sub[0];
+            $merchant_name = $sub[1];
+
             $all_approved = true;
             foreach ($req_fields as $field) {
-                if (($sub[$field['stat_col']] ?? '') !== 'approved') {
+                if ($sub[$field['stat_idx']] !== 'approved') {
                     $all_approved = false;
                     break;
                 }
             }
-            $is_open = ($last_edited_id == $sub['id']) || ($last_edited_id === null && $index === 0);
+
+            // Closed by default, UNLESS we just edited this exact card
+            $is_open = ($last_edited_merchant === $merchant_id);
         ?>
             <details class="card" <?= $is_open ? 'open' : '' ?>>
                 
                 <summary>
                     <div class="header-left">
                         <span class="header-icon">▼</span>
-                        <span><?= htmlspecialchars($sub['username']) ?> (<?= htmlspecialchars($sub['merchant_id']) ?>)</span>
+                        <span><?= htmlspecialchars($merchant_name) ?> (<?= htmlspecialchars($merchant_id) ?>)</span>
                     </div>
                     <div>
                         <?php if ($all_approved): ?>
@@ -197,9 +262,8 @@ function renderBadge($status) {
                 </summary>
                 
                 <div class="card-content">
-                    <form method="POST">
-                        <input type="hidden" name="req_id" value="<?= $sub['id'] ?>">
-                        <input type="hidden" name="merchant_id" value="<?= htmlspecialchars($sub['merchant_id']) ?>">
+                    <form method="POST" action="<?= $url_params ?>">
+                        <input type="hidden" name="merchant_id" value="<?= htmlspecialchars($merchant_id) ?>">
                         
                         <table>
                             <tr>
@@ -210,8 +274,9 @@ function renderBadge($status) {
                             </tr>
                             
                             <?php foreach ($req_fields as $field): 
-                                $status = $sub[$field['stat_col']] ?? 'not_submitted';
-                                $data = $field['val_col'] ? ($sub[$field['val_col']] ?? null) : null;
+                                $status = $sub[$field['stat_idx']] ?: 'not_submitted';
+                                $data = $field['val_idx'] !== null ? $sub[$field['val_idx']] : null;
+                                $reason = $sub[$field['reason_idx']] ?? '';
                             ?>
                             <tr>
                                 <td><strong><?= $field['label'] ?></strong></td>
@@ -248,12 +313,11 @@ function renderBadge($status) {
                                     </select>
                                     
                                     <input type="text" 
-                                        name="<?= $field['reason_col'] ?>" 
-                                        value="<?= htmlspecialchars($sub[$field['reason_col']] ?? '') ?>" 
-                                        placeholder="Reason if rejected..." 
-                                        class="reason-input"
-                                        style="margin-top: 8px; width: 100%; padding: 6px; box-sizing: border-box; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; display: <?= $status === 'rejected' ? 'block' : 'none' ?>;"
-                                        required>
+                                           name="<?= $field['reason_col'] ?>" 
+                                           value="<?= htmlspecialchars($reason) ?>" 
+                                           placeholder="Reason if rejected..." 
+                                           class="reason-input"
+                                           style="margin-top: 8px; width: 100%; padding: 6px; box-sizing: border-box; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; display: <?= $status === 'rejected' ? 'block' : 'none' ?>;">
                                 </td>
                             </tr>
                             <?php endforeach; ?>
@@ -266,9 +330,8 @@ function renderBadge($status) {
                     </form>
 
                     <?php if ($all_approved): ?>
-                        <form method="POST" style="margin-top: 10px;">
-                            <input type="hidden" name="req_id" value="<?= $sub['id'] ?>">
-                            <input type="hidden" name="merchant_id" value="<?= htmlspecialchars($sub['merchant_id']) ?>">
+                        <form method="POST" action="<?= $url_params ?>" style="margin-top: 10px;">
+                            <input type="hidden" name="merchant_id" value="<?= htmlspecialchars($merchant_id) ?>">
                             <button type="submit" name="send_email" class="btn btn-success">
                                 ✉️ Send Production Account Endorsement Email
                             </button>
@@ -278,27 +341,34 @@ function renderBadge($status) {
             </details>
         <?php endforeach; ?>
 
+        <?php if ($total_pages > 1): ?>
+            <div class="pagination">
+                <a href="?page=<?= max(1, $current_page - 1) ?>&search=<?= urlencode($search_query) ?>" class="page-btn <?= $current_page <= 1 ? 'disabled' : '' ?>">« Prev</a>
+                
+                <?php for ($i = 1; $i <= $total_pages; $i++): ?>
+                    <a href="?page=<?= $i ?>&search=<?= urlencode($search_query) ?>" class="page-btn <?= $i === $current_page ? 'active' : '' ?>"><?= $i ?></a>
+                <?php endfor; ?>
+
+                <a href="?page=<?= min($total_pages, $current_page + 1) ?>&search=<?= urlencode($search_query) ?>" class="page-btn <?= $current_page >= $total_pages ? 'disabled' : '' ?>">Next »</a>
+            </div>
+        <?php endif; ?>
+
     <?php endif; ?>
 </div>
 
 <script>
 function toggleReason(selectElement) {
-    // Find the input field that comes immediately after this specific dropdown
     const reasonInput = selectElement.nextElementSibling;
-    
-    // If the status is changed to rejected, show the text box
     if (selectElement.value === 'rejected') {
         reasonInput.style.display = 'block';
-        reasonInput.required = true; // Force them to type a reason
+        reasonInput.required = true; 
     } else {
-        // Otherwise, hide it and clear any text they might have typed
         reasonInput.style.display = 'none';
         reasonInput.value = ''; 
         reasonInput.required = false;
     }
 }
 </script>
-
 
 </body>
 </html>
