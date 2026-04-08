@@ -312,12 +312,13 @@ $url_params = "?page=" . $current_page . "&search=" . urlencode($search_query);
                                         <option value="rejected" <?= $status === 'rejected' ? 'selected' : '' ?>>Reject</option>
                                     </select>
                                     
-                                    <input type="text" 
+                                    <textarea
                                            name="<?= $field['reason_col'] ?>" 
                                            value="<?= htmlspecialchars($reason) ?>" 
-                                           placeholder="Reason if rejected..." 
+                                           placeholder="Reason if rejected..."
                                            class="reason-input"
-                                           style="margin-top: 8px; width: 100%; padding: 6px; box-sizing: border-box; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; display: <?= $status === 'rejected' ? 'block' : 'none' ?>;">
+                                           style="margin-top: 8px; width: 100%; padding: 6px; box-sizing: border-box; font-size: 0.85rem; border: 1px solid #ccc; border-radius: 4px; display: <?= $status === 'rejected' ? 'block' : 'none' ?>;"></textarea>
+
                                 </td>
                             </tr>
                             <?php endforeach; ?>
